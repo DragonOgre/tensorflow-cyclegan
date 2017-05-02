@@ -10,6 +10,10 @@ import argparse
 import tensorflow as tf
 import utils
 
+#ensure reproducability
+random_seed = 1234
+np.random.seed(random_seed)
+
 LOG_DIR = './log/'
 A_DIR = './data/trainA/*.jpg'
 B_DIR = './data/trainB/*.jpg'
@@ -30,6 +34,8 @@ counter = 1
 start_time = time.time()
 totalEpochs = 200
 
+SOFT_LABELS = False
+
 CHECKPOINT_FILE = './checkpoint/cyclegan.ckpt'
 
 # READ INPUT PARAMS
@@ -45,6 +51,7 @@ def parseArguments():
 	parser.add_argument("-t", "--time", help="Max time (mins) to run training", type=int, default=60 * 10)
 	parser.add_argument("-l", "--lrate", help="Learning rate", type=float, default=LEARNING_RATE)
 	parser.add_argument("-c", "--check", help="Location of checkpoint  file where model will be stored", type=str, default=CHECKPOINT_FILE)
+	parser.add_argument("-sl", "--softL", help="Set to True for random real labels around 1.0", type=bool, default=SOFT_LABELS)
 
 	# Parse arguments
 	args = parser.parse_args()
@@ -294,215 +301,219 @@ def discriminator(image, reuse=False, name="discriminator"):
 		return h4
 
 
-def main():
-    args = parseArguments()
+args = parseArguments()
 
-    # Raw print arguments
-    print("You are running the script with arguments: ")
-    for a in args.__dict__:
-        print(str(a) + ": " + str(args.__dict__[a]))
+# Raw print arguments
+print("You are running the script with arguments: ")
+for a in args.__dict__:
+	print(str(a) + ": " + str(args.__dict__[a]))
 
-    A_DIR = args.trainA
-    B_DIR = args.trainB
-    A_TEST_DIR = args.testA
-    B_TEST_DIR = args.testB
-    MAX_TRAIN_TIME_MINS = args.time
-    LEARNING_RATE = args.lrate
-    CHECKPOINT_FILE = args.check
+A_DIR = args.trainA
+B_DIR = args.trainB
+A_TEST_DIR = args.testA
+B_TEST_DIR = args.testB
+MAX_TRAIN_TIME_MINS = args.time
+LEARNING_RATE = args.lrate
+CHECKPOINT_FILE = args.check
+SOFT_LABELS = args.softL
 
-    # DEFINE OUR MODEL AND LOSS FUNCTIONS
-    # -------------------------------------------------------
+if SOFT_LABELS:
+	softL_c = np.random.normal(1,0.05)
+	if softL_c > 1.15: softL_c = 1.15
+	if softL_c < 0.85: softL_c = 0.85
+else:
+	softL_c = 1.0
+print('Soft Labeling: ', softL_c)
 
-    real_data = tf.placeholder(tf.float32, [None, 256, 256, 6], name='real_X_and_Y_images')
-    real_X = real_data[:, :, :, :3]
-    real_Y = real_data[:, :, :, 3:6]
+# DEFINE OUR MODEL AND LOSS FUNCTIONS
+# -------------------------------------------------------
 
-    # genG(X) => Y            - fake_B
-    genG = generator(real_X, name="generatorG")
-    # genF( genG(Y) ) => Y    - fake_A_
-    genF_back = generator(genG, name="generatorF")
-    # genF(Y) => X            - fake_A
-    genF = generator(real_Y, name="generatorF", reuse=True)
-    # genF( genG(X)) => X     - fake_B_
-    genG_back = generator(genF, name="generatorG", reuse=True)
+real_data = tf.placeholder(tf.float32, [None, 256, 256, 6], name='real_X_and_Y_images')
+real_X = real_data[:, :, :, :3]
+real_Y = real_data[:, :, :, 3:6]
 
-    # DY_fake is the discriminator for Y that takes in genG(X)
-    # DX_fake is the discriminator for X that takes in genF(Y)
-    discY_fake = discriminator(genG, reuse=False, name="discY")
-    discX_fake = discriminator(genF, reuse=False, name="discX")
+# genG(X) => Y            - fake_B
+genG = generator(real_X, name="generatorG")
+# genF( genG(Y) ) => Y    - fake_A_
+genF_back = generator(genG, name="generatorF")
+# genF(Y) => X            - fake_A
+genF = generator(real_Y, name="generatorF", reuse=True)
+# genF( genG(X)) => X     - fake_B_
+genG_back = generator(genF, name="generatorG", reuse=True)
 
-    g_loss_G = tf.reduce_mean((discY_fake - tf.ones_like(discY_fake)) ** 2) \
-            + L1_lambda * tf.reduce_mean(tf.abs(real_X - genF_back)) \
-            + L1_lambda * tf.reduce_mean(tf.abs(real_Y - genG_back))
+# DY_fake is the discriminator for Y that takes in genG(X)
+# DX_fake is the discriminator for X that takes in genF(Y)
+discY_fake = discriminator(genG, reuse=False, name="discY")
+discX_fake = discriminator(genF, reuse=False, name="discX")
 
-    g_loss_F = tf.reduce_mean((discX_fake - tf.ones_like(discX_fake)) ** 2) \
-            + L1_lambda * tf.reduce_mean(tf.abs(real_X - genF_back)) \
-            + L1_lambda * tf.reduce_mean(tf.abs(real_Y - genG_back))
+g_loss_G = tf.reduce_mean((discY_fake - tf.ones_like(discY_fake)*softL_c) ** 2) \
+		   + L1_lambda * tf.reduce_mean(tf.abs(real_X - genF_back)) \
+		   + L1_lambda * tf.reduce_mean(tf.abs(real_Y - genG_back))
 
-    fake_X_sample = tf.placeholder(tf.float32, [None, 256, 256, 3], name="fake_X_sample")
-    fake_Y_sample = tf.placeholder(tf.float32, [None, 256, 256, 3], name="fake_Y_sample")
+g_loss_F = tf.reduce_mean((discX_fake - tf.ones_like(discX_fake)*softL_c) ** 2) \
+		   + L1_lambda * tf.reduce_mean(tf.abs(real_X - genF_back)) \
+		   + L1_lambda * tf.reduce_mean(tf.abs(real_Y - genG_back))
 
-    # DY is the discriminator for Y that takes in Y
-    # DX is the discriminator for X that takes in XD
-    DY = discriminator(real_Y, reuse=True, name="discY")
-    DX = discriminator(real_X, reuse=True, name="discX")
-    DY_fake_sample = discriminator(fake_Y_sample, reuse=True, name="discY")
-    DX_fake_sample = discriminator(fake_X_sample, reuse=True, name="discX")
+fake_X_sample = tf.placeholder(tf.float32, [None, 256, 256, 3], name="fake_X_sample")
+fake_Y_sample = tf.placeholder(tf.float32, [None, 256, 256, 3], name="fake_Y_sample")
 
-    DY_loss_real = tf.reduce_mean((DY - tf.ones_like(DY)) ** 2)
-    DY_loss_fake = tf.reduce_mean((DY_fake_sample - tf.zeros_like(DY_fake_sample)) ** 2)
-    DY_loss = (DY_loss_real + DY_loss_fake) / 2
+# DY is the discriminator for Y that takes in Y
+# DX is the discriminator for X that takes in X
+DY = discriminator(real_Y, reuse=True, name="discY")
+DX = discriminator(real_X, reuse=True, name="discX")
+DY_fake_sample = discriminator(fake_Y_sample, reuse=True, name="discY")
+DX_fake_sample = discriminator(fake_X_sample, reuse=True, name="discX")
 
-    DX_loss_real = tf.reduce_mean((DX - tf.ones_like(DX)) ** 2)
-    DX_loss_fake = tf.reduce_mean((DX_fake_sample - tf.zeros_like(DX_fake_sample)) ** 2)
-    DX_loss = (DX_loss_real + DX_loss_fake) / 2
+DY_loss_real = tf.reduce_mean((DY - tf.ones_like(DY)*softL_c) ** 2)
+DY_loss_fake = tf.reduce_mean((DY_fake_sample - tf.zeros_like(DY_fake_sample)) ** 2)
+DY_loss = (DY_loss_real + DY_loss_fake) / 2
 
-    test_X = tf.placeholder(tf.float32, [None, 256, 256, 3], name='testX')
-    test_Y = tf.placeholder(tf.float32, [None, 256, 256, 3], name='testY')
+DX_loss_real = tf.reduce_mean((DX - tf.ones_like(DX)*softL_c) ** 2)
+DX_loss_fake = tf.reduce_mean((DX_fake_sample - tf.zeros_like(DX_fake_sample)) ** 2)
+DX_loss = (DX_loss_real + DX_loss_fake) / 2
 
-    testY = generator(test_X, name="generatorG", reuse=True)
-    testX = generator(test_Y, name="generatorF", reuse=True)
+test_X = tf.placeholder(tf.float32, [None, 256, 256, 3], name='testX')
+test_Y = tf.placeholder(tf.float32, [None, 256, 256, 3], name='testY')
 
-    t_vars = tf.trainable_variables()
-    DY_vars = [v for v in t_vars if 'discY' in v.name]
-    DX_vars = [v for v in t_vars if 'discX' in v.name]
-    g_vars_G = [v for v in t_vars if 'generatorG' in v.name]
-    g_vars_F = [v for v in t_vars if 'generatorF' in v.name]
+testY = generator(test_X, name="generatorG", reuse=True)
+testX = generator(test_Y, name="generatorF", reuse=True)
 
-    # SETUP OUR SUMMARY VARIABLES FOR MONITORING
-    # -------------------------------------------------------
+t_vars = tf.trainable_variables()
+DY_vars = [v for v in t_vars if 'discY' in v.name]
+DX_vars = [v for v in t_vars if 'discX' in v.name]
+g_vars_G = [v for v in t_vars if 'generatorG' in v.name]
+g_vars_F = [v for v in t_vars if 'generatorF' in v.name]
 
-    G_sum = tf.summary.scalar("g_loss_G", g_loss_G)
-    F_sum = tf.summary.scalar("g_loss_F", g_loss_F)
-    DY_loss_sum = tf.summary.scalar("DY_loss", DY_loss)
-    DX_loss_sum = tf.summary.scalar("DX_loss", DX_loss)
-    DY_loss_real_sum = tf.summary.scalar("DY_loss_real", DY_loss_real)
-    DY_loss_fake_sum = tf.summary.scalar("DY_loss_fake", DY_loss_fake)
-    DX_loss_real_sum = tf.summary.scalar("DX_loss_real", DX_loss_real)
-    DX_loss_fake_sum = tf.summary.scalar("DX_loss_fake", DX_loss_fake)
+# SETUP OUR SUMMARY VARIABLES FOR MONITORING
+# -------------------------------------------------------
 
-    imgX = tf.summary.image('real_X', tf.transpose(real_X, perm=[0, 2, 3, 1]), max_outputs=3)
-    imgG = tf.summary.image('genG', tf.transpose(genG, perm=[0, 2, 3, 1]), max_outputs=3)
-    imgY = tf.summary.image('real_Y', tf.transpose(real_Y, perm=[0, 2, 3, 1]), max_outputs=3)
-    imgF = tf.summary.image('genF', tf.transpose(genF, perm=[0, 2, 3, 1]), max_outputs=3)
+G_sum = tf.summary.scalar("g_loss_G", g_loss_G)
+F_sum = tf.summary.scalar("g_loss_F", g_loss_F)
+DY_loss_sum = tf.summary.scalar("DY_loss", DY_loss)
+DX_loss_sum = tf.summary.scalar("DX_loss", DX_loss)
+DY_loss_real_sum = tf.summary.scalar("DY_loss_real", DY_loss_real)
+DY_loss_fake_sum = tf.summary.scalar("DY_loss_fake", DY_loss_fake)
+DX_loss_real_sum = tf.summary.scalar("DX_loss_real", DX_loss_real)
+DX_loss_fake_sum = tf.summary.scalar("DX_loss_fake", DX_loss_fake)
 
-    DY_sum = tf.summary.merge(
-        [DY_loss_sum, DY_loss_real_sum, DY_loss_fake_sum]
-    )
-    DX_sum = tf.summary.merge(
-        [DX_loss_sum, DX_loss_real_sum, DX_loss_fake_sum]
-    )
+imgX = tf.summary.image('real_X', tf.transpose(real_X, perm=[0, 2, 3, 1]), max_outputs=3)
+imgG = tf.summary.image('genG', tf.transpose(genG, perm=[0, 2, 3, 1]), max_outputs=3)
+imgY = tf.summary.image('real_Y', tf.transpose(real_Y, perm=[0, 2, 3, 1]), max_outputs=3)
+imgF = tf.summary.image('genF', tf.transpose(genF, perm=[0, 2, 3, 1]), max_outputs=3)
 
-    images_sum = tf.summary.merge([imgX, imgG, imgY, imgF])
+DY_sum = tf.summary.merge(
+	[DY_loss_sum, DY_loss_real_sum, DY_loss_fake_sum]
+)
+DX_sum = tf.summary.merge(
+	[DX_loss_sum, DX_loss_real_sum, DX_loss_fake_sum]
+)
 
-    # SETUP OUR TRAINING
-    # -------------------------------------------------------
+images_sum = tf.summary.merge([imgX, imgG, imgY, imgF])
 
-    DX_optim = tf.train.AdamOptimizer(LEARNING_RATE, MOMENTUM) \
-        .minimize(DX_loss, var_list=DX_vars)
+# SETUP OUR TRAINING
+# -------------------------------------------------------
 
-    DY_optim = tf.train.AdamOptimizer(LEARNING_RATE, MOMENTUM) \
-        .minimize(DY_loss, var_list=DY_vars)
+DX_optim = tf.train.AdamOptimizer(LEARNING_RATE, MOMENTUM) \
+	.minimize(DX_loss, var_list=DX_vars)
 
-    G_optim = tf.train.AdamOptimizer(LEARNING_RATE, MOMENTUM) \
-        .minimize(g_loss_G, var_list=g_vars_G)
+DY_optim = tf.train.AdamOptimizer(LEARNING_RATE, MOMENTUM) \
+	.minimize(DY_loss, var_list=DY_vars)
 
-    F_optim = tf.train.AdamOptimizer(LEARNING_RATE, MOMENTUM) \
-        .minimize(g_loss_F, var_list=g_vars_F)
+G_optim = tf.train.AdamOptimizer(LEARNING_RATE, MOMENTUM) \
+	.minimize(g_loss_G, var_list=g_vars_G)
 
-    # CREATE AND RUN OUR TRAINING LOOP
-    # -------------------------------------------------------
+F_optim = tf.train.AdamOptimizer(LEARNING_RATE, MOMENTUM) \
+	.minimize(g_loss_F, var_list=g_vars_F)
 
-    saver = tf.train.Saver(tf.global_variables(), max_to_keep = 5)
+# CREATE AND RUN OUR TRAINING LOOP
+# -------------------------------------------------------
 
-    print("Starting the time")
-    timer = utils.Timer()
+saver = tf.train.Saver(tf.global_variables(), max_to_keep = 5)
 
-    sess = tf.Session()
-    sess.run(tf.global_variables_initializer())
+print("Starting the time")
+timer = utils.Timer()
 
-    ckpt = tf.train.get_checkpoint_state('./checkpoint/')
+sess = tf.Session()
+sess.run(tf.global_variables_initializer())
 
-    if ckpt and ckpt.model_checkpoint_path:
-        saver.restore(sess, ckpt.model_checkpoint_path)
-        print("Reading model parameters from %s" % ckpt.model_checkpoint_path)
-    else:
-        print("Created model with fresh parameters.")
-        sess.run(tf.global_variables_initializer())
+ckpt = tf.train.get_checkpoint_state('./checkpoint/')
 
-    writer = tf.summary.FileWriter("./log", sess.graph)
+if ckpt and ckpt.model_checkpoint_path:
+	saver.restore(sess, ckpt.model_checkpoint_path)
+	print("Reading model parameters from %s" % ckpt.model_checkpoint_path)
+else:
+	print("Created model with fresh parameters.")
+	sess.run(tf.global_variables_initializer())
 
-    is_early_break = False
+writer = tf.summary.FileWriter("./log", sess.graph)
 
-    sample_X_image, sample_Y_image, sample_feed_data = prepare_sample_source()
+is_early_break = False
 
-    for epoch in xrange(totalEpochs):
+sample_X_image, sample_Y_image, sample_feed_data = prepare_sample_source()
 
-        dataX = glob(A_DIR)
-        dataY = glob(B_DIR)
+for epoch in xrange(totalEpochs):
 
-        np.random.shuffle(dataX)
-        np.random.shuffle(dataY)
-        batch_idxs = min(len(dataX), len(dataY))
+	dataX = glob(A_DIR)
+	dataY = glob(B_DIR)
 
-        pool = ImagePool(50)
+	np.random.shuffle(dataX)
+	np.random.shuffle(dataY)
+	batch_idxs = min(len(dataX), len(dataY))
 
-        if is_early_break:
-            print("Finishing early...")
-            break
+	pool = ImagePool(50)
 
-        for idx in xrange(0, batch_idxs):
-            batch_files = zip(dataX[idx:(idx + 1)], dataY[idx:(idx + 1)])
-            batch_images = [load_data(f) for f in batch_files]
-            batch_images = np.array(batch_images).astype(np.float32)
+	if is_early_break:
+		print("Finishing early...")
+		break
 
-            # FORWARD PASS
-            generated_X, generated_Y = sess.run([genF, genG],
-                                                feed_dict={real_data: batch_images})
-            [generated_X, generated_Y] = pool([generated_X, generated_Y])
+	for idx in xrange(0, batch_idxs):
+		batch_files = zip(dataX[idx:(idx + 1)], dataY[idx:(idx + 1)])
+		batch_images = [load_data(f) for f in batch_files]
+		batch_images = np.array(batch_images).astype(np.float32)
 
-            # UPDATE  G
-            _, summary_str = sess.run([G_optim, G_sum], feed_dict={real_data: batch_images})
-            writer.add_summary(summary_str, counter)
+		# FORWARD PASS
+		generated_X, generated_Y = sess.run([genF, genG],
+											feed_dict={real_data: batch_images})
+		[generated_X, generated_Y] = pool([generated_X, generated_Y])
 
-            # UPDATE DY
-            _, summary_str = sess.run([DY_optim, DY_sum],
-                                    feed_dict={real_data: batch_images,
-                                                fake_Y_sample: generated_Y})
-            writer.add_summary(summary_str, counter)
+		# UPDATE  G
+		_, summary_str = sess.run([G_optim, G_sum], feed_dict={real_data: batch_images})
+		writer.add_summary(summary_str, counter)
 
-            # UPDATE F
-            _, summary_str = sess.run([F_optim, F_sum], feed_dict={real_data: batch_images})
-            writer.add_summary(summary_str, counter)
+		# UPDATE DY
+		_, summary_str = sess.run([DY_optim, DY_sum],
+								  feed_dict={real_data: batch_images,
+											 fake_Y_sample: generated_Y})
+		writer.add_summary(summary_str, counter)
 
-            # UPDATE DX
-            _, summary_str = sess.run([DX_optim, DX_sum],
-                                    feed_dict={real_data: batch_images,
-                                                fake_X_sample: generated_X})
-            writer.add_summary(summary_str, counter)
+		# UPDATE F
+		_, summary_str = sess.run([F_optim, F_sum], feed_dict={real_data: batch_images})
+		writer.add_summary(summary_str, counter)
 
-            counter += 1
-            print("Epoch: [%2d] [%4d/%4d] time: %4.4f" % (epoch, idx, batch_idxs, time.time() - start_time))
+		# UPDATE DX
+		_, summary_str = sess.run([DX_optim, DX_sum],
+								  feed_dict={real_data: batch_images,
+											 fake_X_sample: generated_X})
+		writer.add_summary(summary_str, counter)
 
-            if np.mod(counter, SAMPLE_STEP) == 0:
-                try:
-                    sample_model(epoch, idx, sample_X_image, sample_Y_image, sample_feed_data )
-                except Exception as e:
-                    print("Error happend:")
-                    print(e)
+		counter += 1
+		print("Epoch: [%2d] [%4d/%4d] time: %4.4f" % (epoch, idx, batch_idxs, time.time() - start_time))
 
-            if np.mod(counter, SAVE_STEP) == 0:
-                print("Running for '{0:.2}' mins, saving to {1}".format(timer.elapsed()/60, CHECKPOINT_FILE))
-                saver.save(sess, CHECKPOINT_FILE)
+		if np.mod(counter, SAMPLE_STEP) == 0:
+			try:
+				sample_model(epoch, idx, sample_X_image, sample_Y_image, sample_feed_data )
+			except Exception as e:
+				print("Error happend:")
+				print(e)
 
-            if np.mod(counter, SAVE_STEP) == 0:
-                elapsed_min = timer.elapsed()/60
-                if (elapsed_min >= MAX_TRAIN_TIME_MINS):
-                    print("Trained for '{0:.2}' mins and reached the max limit of {1}. Saving model.".format(elapsed_min, MAX_TRAIN_TIME_MINS))
-                    saver.save(sess, CHECKPOINT_FILE)
-                    is_early_break = True
-                    break
+		if np.mod(counter, SAVE_STEP) == 0:
+			print("Running for '{0:.2}' mins, saving to {1}".format(timer.elapsed()/60, CHECKPOINT_FILE))
+			saver.save(sess, CHECKPOINT_FILE)
 
-
-if __name__ == "__main__":
-    main()
+		if np.mod(counter, SAVE_STEP) == 0:
+			elapsed_min = timer.elapsed()/60
+			if (elapsed_min >= MAX_TRAIN_TIME_MINS):
+				print("Trained for '{0:.2}' mins and reached the max limit of {1}. Saving model.".format(elapsed_min, MAX_TRAIN_TIME_MINS))
+				saver.save(sess, CHECKPOINT_FILE)
+				is_early_break = True
+				break
