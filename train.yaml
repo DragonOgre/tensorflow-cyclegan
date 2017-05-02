@@ -1,0 +1,37 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  labels:
+    app: cyclegan-trainer
+  name: cyclegan-trainer
+spec:
+  template:
+    metadata:
+      name: cyclegan-trainer
+    spec:
+      volumes:
+      - name: binaries
+        hostPath:
+          path: /usr/bin/
+      - name: libraries
+        hostPath:
+          path: /usr/lib/x86_64-linux-gnu
+      containers:
+      - args:
+        - --train
+        image: wbuchwalter/cyclegan
+        name: tensorflow-trainer
+        env:
+        - name: STORAGE_ACCOUNT_NAME
+          value: 
+        - name: STORAGE_ACCOUNT_KEY
+          value: 
+        resources:
+          limits:
+            alpha.kubernetes.io/nvidia-gpu: 2
+        volumeMounts:
+        - mountPath: /usr/bin/
+          name: binaries
+        - mountPath: /usr/lib/x86_64-linux-gnu
+          name: libraries
+      restartPolicy: Never
