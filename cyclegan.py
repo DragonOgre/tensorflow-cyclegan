@@ -486,6 +486,7 @@ try:
         print("[%4d] time: %4.4f" % (counter, time.time() - start_time))
 
         if np.mod(counter, LOG_FREQUENCY) == 0:
+            print('writing')
             writer.add_summary(summary_str, counter)
 
         if np.mod(counter, SAMPLE_STEP) == 0:
