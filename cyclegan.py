@@ -38,28 +38,35 @@ CHECKPOINT_DIR = './checkpoint/'
 
 # READ INPUT PARAMS
 def parseArguments():
-		# Create argument parser
-		parser = argparse.ArgumentParser()
+    # Create argument parser
+    parser = argparse.ArgumentParser()
 
-		# Optional arguments
-		parser.add_argument('-log', '--logdir', dest='logdir', help='Log directory', default=LOG_DIR)
-		parser.add_argument('-i', '--input', '--input_prefix', dest='input_prefix',
-												help="Input prefix for tfrecords files.", required=True)
-		parser.add_argument("-t", "--time", help="Max time (mins) to run training", type=int, default=60 * 10)
-		parser.add_argument("-l", "--lrate", help="Learning rate", type=float, default=LEARNING_RATE)
-		parser.add_argument("-cd", "--check-dir", dest="checkpoint_dir", help="Directory where checkpoint file will be stored", type=str, default=CHECKPOINT_DIR)
-		parser.add_argument("-c", "--check", help="Name of the checkpoint file", type=str, default=CHECKPOINT_FILE)
-		parser.add_argument("-sl", "--softL", help="Set to True for random real labels around 1.0", action='store_true',
-												default=SOFT_LABELS)
-		parser.add_argument('-b', '--batch', '--batch-size', help='Batch size', type=int, default=BATCH_SIZE,
-												dest='batch_size')
-		parser.add_argument('-s', '--sample', '--sample-freq', dest='sample_freq', help='How often to write out sample images', type=int, default=SAMPLE_STEP)
-		parser.add_argument('--checkpoint-freq', dest='checkpoint_freq', help='How often to save to the checkpoint file', type=int, default=SAVE_STEP)
+    # Optional arguments
+    parser.add_argument('-log', '--logdir', dest='logdir', help='Log directory', default=LOG_DIR)
+    parser.add_argument('-i', '--input', '--input_prefix', dest='input_prefix',
+                                            help="Input prefix for tfrecords files.", required=True)
+    parser.add_argument("-t", "--time", help="Max time (mins) to run training", type=int, default=60 * 10)
+    parser.add_argument("-l", "--lrate", help="Learning rate", type=float, default=LEARNING_RATE)
+    parser.add_argument("-cd", "--check-dir", dest="checkpoint_dir", help="Directory where checkpoint file will be stored", type=str, default=CHECKPOINT_DIR)
+    parser.add_argument("-c", "--check", help="Name of the checkpoint file", type=str, default=CHECKPOINT_FILE)
+    parser.add_argument("-sl", "--softL", help="Set to True for random real labels around 1.0", action='store_true',
+                                            default=SOFT_LABELS)
+    parser.add_argument('-b', '--batch', '--batch-size', help='Batch size', type=int, default=BATCH_SIZE,
+                                            dest='batch_size')
+    parser.add_argument('-s', '--sample', '--sample-freq', dest='sample_freq', help='How often to write out sample images', type=int, default=SAMPLE_STEP)
+    parser.add_argument('--checkpoint-freq', dest='checkpoint_freq', help='How often to save to the checkpoint file', type=int, default=SAVE_STEP)
 
-		# Parse arguments
-		args = parser.parse_args()
+    # Parse arguments
+    args = parser.parse_args()
 
-		return args
+    # Raw print arguments
+    print("You are running the script with arguments: ")
+    for a in args.__dict__:
+        print(str(a) + ": " + str(args.__dict__[a]))
+    
+    print("Checkpoints will be saved in {}".format(os.path.join(args.checkpoint_dir, args.check)))
+
+    return args
 
 
 def to_image(data):
@@ -295,11 +302,6 @@ def save_model(saver, sess):
     return path
 
 args = parseArguments()
-
-# Raw print arguments
-print("You are running the script with arguments: ")
-for a in args.__dict__:
-    print(str(a) + ": " + str(args.__dict__[a]))
 
 MAX_TRAIN_TIME_MINS = args.time
 LEARNING_RATE = args.lrate
