@@ -21,7 +21,7 @@ spec:
       containers:
       - name: cyclegan-trainer
         command: ["/bin/sh", "-c"]
-        args: ["export LD_LIBRARY_PATH='/usr/lib/x86_64-linux-gnu_custom:$LD_LIBRARY_PATH'; python cyclegan.py -i rbc -t 180 -b 16 -sl -cd /data/checkpoints/rbc-lr0002-b16-sl1 -log /data/logs/rbc-lr0002-b16-sl1"]
+        args: ["export LD_LIBRARY_PATH='/usr/lib/x86_64-linux-gnu_custom:$LD_LIBRARY_PATH'; python cyclegan.py -i rbc -t 180 -b 16 -sl -lf 50 -cd /data/checkpoints/rbc-lr0002-b16-sl1 -log /data/logs/rbc-lr0002-b16-sl1"]
         image: wbuchwalter/cyclegan
         resources:
           limits:
