@@ -3,35 +3,32 @@ kind: Job
 metadata:
   labels:
     app: cyclegan-trainer
-  name: cyclegan-trainer
+  name: scb-lr0002-b16-sl1
 spec:
   template:
     metadata:
       name: cyclegan-trainer
     spec:
       volumes:
-      - name: binaries
-        hostPath:
-          path: /usr/bin/
       - name: libraries
         hostPath:
           path: /usr/lib/x86_64-linux-gnu
+      - name: azurefile
+        azureFile:
+            secretName: azure-secret
+            shareName: data
+            readOnly: false      
       containers:
-      - args:
-        - --train
+      - name: cyclegan-trainer
+        command: ["/bin/sh"]
+        args: ["start_training.sh", "-i", "scb", "-t", "180", "-c", "-sl", "1", "-b", "16", model.ckpt", "-cd", "/data/checkpoints/scb-lr0002-b16-sl1", "-log", "/data/logs/scb-lr0002-b16-sl1"]
         image: wbuchwalter/cyclegan
-        name: tensorflow-trainer
-        env:
-        - name: STORAGE_ACCOUNT_NAME
-          value: 
-        - name: STORAGE_ACCOUNT_KEY
-          value: 
         resources:
           limits:
-            alpha.kubernetes.io/nvidia-gpu: 2
+            alpha.kubernetes.io/nvidia-gpu: 1
         volumeMounts:
-        - mountPath: /usr/bin/
-          name: binaries
-        - mountPath: /usr/lib/x86_64-linux-gnu
+        - mountPath: /usr/lib/x86_64-linux-gnu_custom
           name: libraries
+        - mountPath: "/data"
+          name: azurefile       
       restartPolicy: Never
