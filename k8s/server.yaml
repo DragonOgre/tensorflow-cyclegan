@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: cyclegan-server
+  name: cyclegan-server
+spec:
+  ports:
+  - port: 80
+    targetPort: 80
+  selector:
+    app: cyclegan-server
+  type: LoadBalancer
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  labels:
+    app: cyclegan-server
+  name: cyclegan-server
+spec:
+  template:
+    metadata:
+      labels:
+        app: cyclegan-server
+    spec:    
+      containers:
+      - name: cyclegan-server
+        command: ["/bin/sh", "-c"]
+        args: ["python server.py"]
+        image: wbuchwalter/cyclegan-server
+        ports:
+        - containerPort: 80 

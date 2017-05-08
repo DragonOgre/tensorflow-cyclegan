@@ -3,3 +3,4 @@ matplotlib
 ipython
 scipy
 numpy
+flask
