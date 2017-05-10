@@ -39,7 +39,8 @@ def get_model(sess, graph, checkpoint_dir):
 
         saver = tf.train.Saver(tf.global_variables())
         ckpt = tf.train.get_checkpoint_state(checkpoint_dir)
-
+        print(checkpoint_dir)
+        print(ckpt)
         saver.restore(sess, ckpt.model_checkpoint_path)
         print("Reading model parameters from %s" % ckpt.model_checkpoint_path)
 

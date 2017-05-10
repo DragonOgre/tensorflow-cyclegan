@@ -4,3 +4,4 @@ ipython
 scipy
 numpy
 flask
+flask-cors
