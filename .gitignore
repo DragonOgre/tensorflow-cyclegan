@@ -1,9 +1,12 @@
 *.jpg
 *.png
 *.OLGALIRAZOR
+*.pyc
 log
 checkpoint
 data
 .idea
 __pycache__
 samples
+*.tfrecords
+.DS_Store
