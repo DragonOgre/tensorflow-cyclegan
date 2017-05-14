@@ -142,7 +142,6 @@ def sample_model(sess, idx, test_X, test_Y, testG, testF, testG_back, testF_back
 
     scipy.misc.imsave(os.path.join(SAMPLE_DIR,'{}_X_2Y.jpg'.format(idx)), y_samp[0])
     scipy.misc.imsave(os.path.join(SAMPLE_DIR,'{}_Y_2X.jpg'.format(idx)), x_samp[0])
-
     scipy.misc.imsave(os.path.join(SAMPLE_DIR,'{}_X_2Y_2X.jpg'.format(idx)), x_cycle_samp[0])
     scipy.misc.imsave(os.path.join(SAMPLE_DIR,'{}_Y_2X_2Y.jpg'.format(idx)), y_cycle_samp[0])
 

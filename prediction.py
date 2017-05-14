@@ -1,18 +1,13 @@
-import numpy as np
 import random
 import os
-import time
-from glob import glob
 import numpy as np
 import scipy.misc
 import argparse
 import tensorflow as tf
 import utils
-from image import Images
-from imagecache import ImageCache
 from cyclegan import generator
-CHECKPOINT_FILE = 'cyclegan.ckpt'
-CHECKPOINT_DIR = './checkpoint/'
+import json
+from flask import Flask
 
 def parseArguments():
     # Create argument parser
@@ -32,47 +27,57 @@ def parseArguments():
     return args
 
 
-def get_model(sess):
+def get_model(sess, graph, checkpoint_dir):
+    with graph.as_default():
+        real_X = tf.placeholder(tf.float32, [None, 256, 256, 3])
+        real_Y = tf.placeholder(tf.float32, [None, 256, 256, 3])
 
-    real_X = tf.placeholder(tf.float32, [None, 256, 256, 3])
-    real_Y = tf.placeholder(tf.float32, [None, 256, 256, 3])
+        # genG(X) => Y            - fake_B
+        genG = generator(real_X, name="generatorG")
+        # genF(Y) => X            - fake_A
+        genF = generator(real_Y, name="generatorF")
 
-    # genG(X) => Y            - fake_B
-    genG = generator(real_X, name="generatorG")
-    # genF(Y) => X            - fake_A
-    genF = generator(real_Y, name="generatorF")
+        saver = tf.train.Saver(tf.global_variables())
+        ckpt = tf.train.get_checkpoint_state(checkpoint_dir)
+        print(checkpoint_dir)
+        print(ckpt)
+        saver.restore(sess, ckpt.model_checkpoint_path)
+        print("Reading model parameters from %s" % ckpt.model_checkpoint_path)
 
-    saver = tf.train.Saver(tf.global_variables())
-    ckpt = tf.train.get_checkpoint_state(CHECKPOINT_DIR)
+    def predictG(image_data):
+        img = (image_data / 127.5) - 1.
+        res = sess.run(genG, feed_dict={real_X: [img]})
+        res = utils.inverse_transform(res[0])
+        # scipy.misc.imsave('resultG.jpg', res)
+        return res
 
-    saver.restore(sess, ckpt.model_checkpoint_path)
-    print("Reading model parameters from %s" % ckpt.model_checkpoint_path)
+    def predictF(image_data):
+        img = (image_data / 127.5) - 1.
+        res = sess.run(genF, feed_dict={real_Y: [img]})
+        res = utils.inverse_transform(res[0])
+        # scipy.misc.imsave('resultF.jpg', res)
+        return res
 
-    def predict():
-        print('Inferring...')
-
-        img = scipy.misc.imread('./sample.jpg', mode='RGB').astype(np.float32)
-        img = (img / 127.5) - 1.
-
-        resG = sess.run(genG, feed_dict={real_X: [img]})
-        resF = sess.run(genF, feed_dict={real_Y: [img]})
-
-        res = utils.inverse_transform(resG[0])
-        scipy.misc.imsave('result.jpg', res)
-        scipy.misc.imsave('result2.jpg', resF[0])
-
-    return predict
-
-
-def main():
-    args = parseArguments()
-    CHECKPOINT_FILE = args.check
-    CHECKPOINT_DIR = args.checkpoint_dir
-
-    sess = tf.Session()
-    predict = get_model(sess)
-    predict()
+    return predictG, predictF
 
 
-if __name__ == '__main__':
-    main()
+def get_predictors():
+    # args = parseArguments()
+    # CHECKPOINT_FILE = args.check
+    # CHECKPOINT_DIR = args.checkpoint_dir
+    checkpoint_dirs = [name for name in os.listdir("checkpoints/") if os.path.isdir(os.path.join('checkpoints/', name)) and name.startswith('checkpoint-')]
+    print('Checkpoint dirs: {}'.format(checkpoint_dirs))
+    checkpoints = {}
+    predictors = {}
+    for dir_name in checkpoint_dirs:
+        name = dir_name.split('-')[1]
+        checkpoints[name] = dir_name
+    
+    for checkpoint_name in checkpoints:
+        graph = tf.Graph()
+        sess = tf.Session(graph=graph)
+        predictG, predictF = get_model(sess, graph, os.path.join('checkpoints/', checkpoints[checkpoint_name]))
+        predictors['{}/{}'.format(checkpoint_name, checkpoint_name.split('_')[0])] = predictG
+        predictors['{}/{}'.format(checkpoint_name, checkpoint_name.split('_')[1])] = predictF
+
+    return predictors
